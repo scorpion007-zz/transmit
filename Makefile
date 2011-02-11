@@ -7,11 +7,11 @@ OBJ=main.obj
 DBG=dbg
 REL=rel
 
-CFLAGS_COMMON=/Zi
-CFLAGS=$(CFLAGS_COMMON) /O2
-CFLAGSD=$(CFLAGS_COMMON) /Od /RTC1 /RTCc
+CFLAGS_COMMON=/Zi /nologo
+CFLAGS=$(CFLAGS_COMMON) /O2 /MD
+CFLAGSD=$(CFLAGS_COMMON) /Od /MDd /RTC1 /RTCc
 
-LFLAGS_COMMON=/debug /release
+LFLAGS_COMMON=/nologo /debug /release mswsock.lib ws2_32.lib
 LFLAGS=$(LFLAGS_COMMON)
 LFLAGSD=$(LFLAGS_COMMON)
 
@@ -21,15 +21,16 @@ debug: $(DBG)\$(TARGET)
 release: $(REL)\$(TARGET)
 
 $(DBG)\$(TARGET): $(DBG)\$(OBJ)
-	$(LINK) $(LFLAGSD) /out:$@
+	$(LINK) $(LFLAGSD) /out:$@ $**
 $(REL)\$(TARGET): $(REL)\$(OBJ)
-	$(LINK) $(LFLAGS) /out:$@
+	$(LINK) $(LFLAGS) /out:$@ $**
 
 {}.c{$(DBG)\}.obj:
-	$(CC) /c $(CFLAGSD) $<
+	$(CC) /c $(CFLAGSD) $< /Fo$@
 
 {}.c{$(REL)\}.obj:
-	$(CC) /c $(CFLAGS) $<
+	$(CC) /c $(CFLAGS) $< /Fo$@
 
 clean:
-	-del *.obj $(TARGET)
+	-del $(DBG)\*.obj $(REL)\*.obj
+	-del $(DBG)\$(TARGET) $(REL)\$(TARGET)
