@@ -7,7 +7,7 @@ OBJ=main.obj
 DBG=dbg
 REL=rel
 
-CFLAGS_COMMON=/Zi /nologo
+CFLAGS_COMMON=/Zi /nologo /W4 /WX
 CFLAGS=$(CFLAGS_COMMON) /O2 /MD
 CFLAGSD=$(CFLAGS_COMMON) /Od /MDd /RTC1 /RTCc
 
