@@ -22,8 +22,12 @@ release: $(REL)\$(TARGET)
 
 $(DBG)\$(TARGET): $(DBG)\$(OBJ)
 	$(LINK) $(LFLAGSD) /out:$@ $**
+# embed manifest
+	mt -manifest $@.manifest -outputresource:$@;1
+
 $(REL)\$(TARGET): $(REL)\$(OBJ)
 	$(LINK) $(LFLAGS) /out:$@ $**
+	mt -manifest $@.manifest -outputresource:$@;1
 
 {}.c{$(DBG)\}.obj:
 	$(CC) /c $(CFLAGSD) $< /Fo$@
@@ -33,4 +37,5 @@ $(REL)\$(TARGET): $(REL)\$(OBJ)
 
 clean:
 	-del $(DBG)\*.obj $(REL)\*.obj
+	-del $(DBG)\*.manifest $(REL)\*.manifest
 	-del $(DBG)\$(TARGET) $(REL)\$(TARGET)
