@@ -6,9 +6,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-// NOTE: TransmitFile fails to send > 2GB in one go. So we need to send in ~2GB
-// chunks.
-#define TWO_GB (0x80000000-512)
+// NOTE: TransmitFile fails to send > 2GB in one go.
+#define CHUNK_SIZE (64*1024*1024)  // 64MB
 
 #ifdef _DEBUG
 #define DBGPRINT debug
@@ -140,7 +139,7 @@ int main(int argc, char **argv) {
 
   // send the file over.
   while (file_size.QuadPart > 0) {
-    if (!TransmitFile(s, hFile, (DWORD)min(TWO_GB, file_size.QuadPart),
+    if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
                       0, &overlapped, NULL, TF_USE_KERNEL_APC)) {
       err = WSAGetLastError();
       if (err == WSA_IO_PENDING) {
@@ -155,9 +154,9 @@ int main(int argc, char **argv) {
         return 1;
       }
     }
-    file_size.QuadPart -= TWO_GB;
-    DBGPRINT("sent %d bytes, remain: %I64d\n", TWO_GB, file_size.QuadPart);
-    offset.QuadPart += TWO_GB;
+    file_size.QuadPart -= CHUNK_SIZE;
+    DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
+    offset.QuadPart += CHUNK_SIZE;
     overlapped.Offset = offset.LowPart;
     overlapped.OffsetHigh = offset.HighPart;
   }
