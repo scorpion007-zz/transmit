@@ -1,12 +1,32 @@
+// Copyright (c) 2011 Alex Budovski.
+
 #include <winsock2.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <stdio.h>
 #include <stdarg.h>
 
+// NOTE: TransmitFile fails to send > 2GB in one go. So we need to send in ~2GB
+// chunks.
+#define TWO_GB (0x80000000-512)
+
+#ifdef _DEBUG
+#define DBGPRINT debug
+#else
+#define DBGPRINT
+#endif
+
 void error(const char *fmt, ...) {
   va_list args;
   fprintf(stderr, "error: ");
+  va_start(args, fmt);
+  vfprintf(stderr, fmt, args);
+  va_end(args);
+}
+
+void debug(const char *fmt, ...) {
+  va_list args;
+  fprintf(stderr, "debug: ");
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
   va_end(args);
@@ -23,6 +43,8 @@ void print_usage(char *image) {
 
 int main(int argc, char **argv) {
   WSADATA wsaData;
+  OVERLAPPED overlapped = {0};
+  LARGE_INTEGER file_size, offset = {0};
   int err;
 
   // command-line args
@@ -109,11 +131,38 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // send the file over.
-  if (!TransmitFile(s, hFile, 0, 0, NULL, NULL, 0)) {
-    error("failed to send file: %d\n", WSAGetLastError());
+  if (!GetFileSizeEx(hFile, &file_size)) {
+    error("GetFileSize failed: %d\n", GetLastError());
+    return 1;
   }
 
+  overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+  // send the file over.
+  while (file_size.QuadPart > 0) {
+    if (!TransmitFile(s, hFile, (DWORD)min(TWO_GB, file_size.QuadPart),
+                      0, &overlapped, NULL, TF_USE_KERNEL_APC)) {
+      err = WSAGetLastError();
+      if (err == WSA_IO_PENDING) {
+        // everything's OK, just hasn't completed yet.
+        DWORD ret = WaitForSingleObject(overlapped.hEvent, INFINITE);
+        if (ret == WAIT_FAILED) {
+          error("wait failed: %d\n", GetLastError());
+          return 1;
+        }
+      } else {
+        error("failed to send file: %d\n", err);
+        return 1;
+      }
+    }
+    file_size.QuadPart -= TWO_GB;
+    DBGPRINT("sent %d bytes, remain: %I64d\n", TWO_GB, file_size.QuadPart);
+    offset.QuadPart += TWO_GB;
+    overlapped.Offset = offset.LowPart;
+    overlapped.OffsetHigh = offset.HighPart;
+  }
+
+  CloseHandle(overlapped.hEvent);
   closesocket(s);
   WSACleanup();
   return 0;
