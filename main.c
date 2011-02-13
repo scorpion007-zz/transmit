@@ -152,23 +152,25 @@ int main(int argc, char **argv) {
       }
     }
   } else {
-    LARGE_INTEGER file_size, offset = {0};
+    LARGE_INTEGER file_size, remain, offset = {0};
     OVERLAPPED    overlapped = {0};
+    DWORD start_time;
     if (!GetFileSizeEx(hFile, &file_size)) {
       error("GetFileSize failed: %d\n", GetLastError());
       return 1;
     }
 
+    remain = file_size;
     overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
+    start_time = GetTickCount();
     // Send the file over.
     //
     // NOTE: For some bizarre reason, we need to use an
     // OVERLAPPED structure even though we're doing essentially synchronous IO.
     // Perhaps this has something to do with sockets being open in OVERLAPPED
     // mode by default?
-    while (file_size.QuadPart > 0) {
-      if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
+    while (remain.QuadPart > 0) {
+      if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, remain.QuadPart),
             0, &overlapped, NULL, TF_USE_KERNEL_APC | TF_WRITE_BEHIND)) {
         err = WSAGetLastError();
         if (err == WSA_IO_PENDING) {
@@ -183,8 +185,24 @@ int main(int argc, char **argv) {
           return 1;
         }
       }
-      file_size.QuadPart -= CHUNK_SIZE;
-      DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
+      remain.QuadPart -= CHUNK_SIZE;
+      if (remain.QuadPart < 0) {
+        remain.QuadPart = 0;
+      }
+      DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, remain.QuadPart);
+      {
+        DWORD cur = GetTickCount();
+        DWORD elapsed = cur - start_time;
+        __int64 transmitted = file_size.QuadPart - remain.QuadPart;
+        double avg_speed_b_ms = (double)transmitted / elapsed;
+        double avg_speed_Mb_s = avg_speed_b_ms * 1000.0 / (1024 * 1024);
+        double percent_complete = 100 *
+          (1 - (double)remain.QuadPart / file_size.QuadPart);
+        printf("Transferred %.2f Mb of %.2f Mb [%.2f%%] at avg %.2f Mb/s\r",
+               (double)transmitted/(1024*1024),
+               (double)file_size.QuadPart/(1024*1024),
+               percent_complete, avg_speed_Mb_s);
+      }
       offset.QuadPart += CHUNK_SIZE;
       overlapped.Offset = offset.LowPart;
       overlapped.OffsetHigh = offset.HighPart;
