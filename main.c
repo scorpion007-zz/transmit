@@ -6,9 +6,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-// NOTE: TransmitFile fails to send > 2GB in one go.
-#define CHUNK_SIZE (64*1024*1024)  // 64MB
-
 #ifdef _DEBUG
 #define DBGPRINT debug
 #else
@@ -42,7 +39,9 @@ void print_usage(char *image) {
 
 int main(int argc, char **argv) {
   WSADATA wsaData;
-  LARGE_INTEGER file_size;
+  BOOL usingStdin = FALSE;
+  char buf[4096];
+  DWORD nread;
   int err;
 
   // command-line args
@@ -71,6 +70,7 @@ int main(int argc, char **argv) {
   if (!strcmp(filename, "-")) {
     // Use stdin.
     hFile = GetStdHandle(STD_INPUT_HANDLE);
+    usingStdin = TRUE;
   } else {
     hFile = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ,
                        NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
@@ -129,20 +129,28 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (!GetFileSizeEx(hFile, &file_size)) {
-    error("GetFileSize failed: %d\n", GetLastError());
-    return 1;
-  }
-
-  // send the file over.
-  while (file_size.QuadPart > 0) {
-    if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
-                      0, NULL, NULL, TF_USE_KERNEL_APC)) {
-      error("failed to send file: %d\n", WSAGetLastError());
+  // This ReadFile loop seems to be significantly faster than TransmitFile, at
+  // least on client versions of Windows. It increased network utilisation from
+  // 20% to 30% on the XP box I tested.
+  while ((err = ReadFile(hFile, buf, sizeof buf, &nread, NULL)) != 0) {
+    if (nread == 0) {  // at EOF
+      break;
+    }
+    if (send(s, buf, nread, 0) == SOCKET_ERROR) {
+      error("send failed: %d\n", WSAGetLastError());
       return 1;
     }
-    file_size.QuadPart -= CHUNK_SIZE;
-    DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
+  }
+
+  if (!err) {
+    err = GetLastError();
+    if (err != ERROR_BROKEN_PIPE) {  // broken pipe expected.
+      error("ReadFile failed: %d\n", err);
+      return 1;
+    }
+  }
+  if (!usingStdin) {
+    CloseHandle(hFile);
   }
 
   closesocket(s);
