@@ -207,6 +207,7 @@ int main(int argc, char **argv) {
       overlapped.Offset = offset.LowPart;
       overlapped.OffsetHigh = offset.HighPart;
     }
+    printf("\n");
 
     CloseHandle(overlapped.hEvent);
     CloseHandle(hFile);
