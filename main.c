@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+// NOTE: TransmitFile fails to send > 2GB in one go.
+#define CHUNK_SIZE (2*1024*1024)
+
 #ifdef _DEBUG
 #define DBGPRINT debug
 #else
@@ -40,8 +43,6 @@ void print_usage(char *image) {
 int main(int argc, char **argv) {
   WSADATA wsaData;
   BOOL usingStdin = FALSE;
-  char buf[4096];
-  DWORD nread;
   int err;
 
   // command-line args
@@ -129,27 +130,44 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // This ReadFile loop seems to be significantly faster than TransmitFile, at
-  // least on client versions of Windows. It increased network utilisation from
-  // 20% to 30% on the XP box I tested.
-  while ((err = ReadFile(hFile, buf, sizeof buf, &nread, NULL)) != 0) {
-    if (nread == 0) {  // at EOF
-      break;
+  if (usingStdin) {
+    // Can't use TransmitFile on pipes. (stdin)
+    char buf[64*1024];
+    DWORD nread;
+    while ((err = ReadFile(hFile, buf, sizeof buf, &nread, NULL)) != 0) {
+      if (nread == 0) {  // at EOF
+        break;
+      }
+      if (send(s, buf, nread, 0) == SOCKET_ERROR) {
+        error("send failed: %d\n", WSAGetLastError());
+        return 1;
+      }
     }
-    if (send(s, buf, nread, 0) == SOCKET_ERROR) {
-      error("send failed: %d\n", WSAGetLastError());
-      return 1;
-    }
-  }
 
-  if (!err) {
-    err = GetLastError();
-    if (err != ERROR_BROKEN_PIPE) {  // broken pipe expected.
-      error("ReadFile failed: %d\n", err);
+    if (!err) {
+      err = GetLastError();
+      if (err != ERROR_BROKEN_PIPE) {  // broken pipe expected.
+        error("ReadFile failed: %d\n", err);
+        return 1;
+      }
+    }
+  } else {
+    LARGE_INTEGER file_size;
+    if (!GetFileSizeEx(hFile, &file_size)) {
+      error("GetFileSize failed: %d\n", GetLastError());
       return 1;
     }
-  }
-  if (!usingStdin) {
+
+    // send the file over.
+    while (file_size.QuadPart > 0) {
+      if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
+            0, NULL, NULL, TF_USE_KERNEL_APC)) {
+        error("failed to send file: %d\n", WSAGetLastError());
+        return 1;
+      }
+      file_size.QuadPart -= CHUNK_SIZE;
+      DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
+    }
     CloseHandle(hFile);
   }
 
