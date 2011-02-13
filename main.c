@@ -42,8 +42,7 @@ void print_usage(char *image) {
 
 int main(int argc, char **argv) {
   WSADATA wsaData;
-  OVERLAPPED overlapped = {0};
-  LARGE_INTEGER file_size, offset = {0};
+  LARGE_INTEGER file_size;
   int err;
 
   // command-line args
@@ -74,7 +73,7 @@ int main(int argc, char **argv) {
     hFile = GetStdHandle(STD_INPUT_HANDLE);
   } else {
     hFile = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ,
-                       NULL, OPEN_EXISTING, 0, NULL);
+                       NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
       error("failed to open file: %s\n", filename);
       return 1;
@@ -135,33 +134,17 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
   // send the file over.
   while (file_size.QuadPart > 0) {
     if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
-                      0, &overlapped, NULL, TF_USE_KERNEL_APC)) {
-      err = WSAGetLastError();
-      if (err == WSA_IO_PENDING) {
-        // everything's OK, just hasn't completed yet.
-        DWORD ret = WaitForSingleObject(overlapped.hEvent, INFINITE);
-        if (ret == WAIT_FAILED) {
-          error("wait failed: %d\n", GetLastError());
-          return 1;
-        }
-      } else {
-        error("failed to send file: %d\n", err);
-        return 1;
-      }
+                      0, NULL, NULL, TF_USE_KERNEL_APC)) {
+      error("failed to send file: %d\n", WSAGetLastError());
+      return 1;
     }
     file_size.QuadPart -= CHUNK_SIZE;
     DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
-    offset.QuadPart += CHUNK_SIZE;
-    overlapped.Offset = offset.LowPart;
-    overlapped.OffsetHigh = offset.HighPart;
   }
 
-  CloseHandle(overlapped.hEvent);
   closesocket(s);
   WSACleanup();
   return 0;
