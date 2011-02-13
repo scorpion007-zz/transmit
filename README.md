@@ -4,14 +4,16 @@ Copyright 2011, Alex Budovski.
 
 Summary
 -------
-Transmit lets you files over a network, really fast! It is a simple alternative
-to netcat on Windows. The connection is unencrypted, like `nc`.
+Transmit lets you transfer files over a network, really fast! It is a simple
+alternative to netcat on Windows. The connection is unencrypted, like `nc`.
 
 `transmit` is designed for Windows only. Linux users have a modern version of
-`netcat`. `transmit` is the transmitting part of the `netcat`
+netcat. `transmit` is the transmitting part of the netcat
 "listen + transmit" communication pair. It's mainly used to send from a
 Windows host to a POSIX host since Windows to Windows communication can be done
 via existing graphical tools such as TeraCopy.
+
+Run with no arguments for usage information.
 
 Compiling
 ---------
@@ -42,7 +44,7 @@ Alternatively, you can use an MinGW bash shell (e.g. Git Bash)
     # transmitter, Windows (Bash)
     hostA$ transmit /c/bigfile.dat hostB 1234
 
-The advantage of the latter is that it allows you to use all the *nix utilities
+The advantage of the latter is that it allows you to use all the Unix utilities
 like `time` to see how long the transfer took, `tar` to send (and optionally
 compress) entire directories, preserving names and structure, etc.
 
