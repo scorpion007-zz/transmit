@@ -152,22 +152,45 @@ int main(int argc, char **argv) {
       }
     }
   } else {
-    LARGE_INTEGER file_size;
+    LARGE_INTEGER file_size, offset = {0};
+    OVERLAPPED    overlapped = {0};
     if (!GetFileSizeEx(hFile, &file_size)) {
       error("GetFileSize failed: %d\n", GetLastError());
       return 1;
     }
 
-    // send the file over.
+    overlapped.hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+    // Send the file over.
+    //
+    // NOTE: For some bizarre reason, we need to use an
+    // OVERLAPPED structure even though we're doing essentially synchronous IO.
+    // Perhaps this has something to do with sockets being open in OVERLAPPED
+    // mode by default?
     while (file_size.QuadPart > 0) {
       if (!TransmitFile(s, hFile, (DWORD)min(CHUNK_SIZE, file_size.QuadPart),
-            0, NULL, NULL, TF_USE_KERNEL_APC)) {
-        error("failed to send file: %d\n", WSAGetLastError());
-        return 1;
+            0, &overlapped, NULL, TF_USE_KERNEL_APC | TF_WRITE_BEHIND)) {
+        err = WSAGetLastError();
+        if (err == WSA_IO_PENDING) {
+          // everything's OK, just hasn't completed yet.
+          DWORD ret = WaitForSingleObject(overlapped.hEvent, INFINITE);
+          if (ret == WAIT_FAILED) {
+            error("wait failed: %d\n", GetLastError());
+            return 1;
+          }
+        } else {
+          error("failed to send file: %d\n", err);
+          return 1;
+        }
       }
       file_size.QuadPart -= CHUNK_SIZE;
       DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, file_size.QuadPart);
+      offset.QuadPart += CHUNK_SIZE;
+      overlapped.Offset = offset.LowPart;
+      overlapped.OffsetHigh = offset.HighPart;
     }
+
+    CloseHandle(overlapped.hEvent);
     CloseHandle(hFile);
   }
 
