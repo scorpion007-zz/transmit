@@ -1,5 +1,8 @@
 // Copyright (c) 2011 Alex Budovski.
 
+#define UNICODE
+#define _UNICODE
+
 #include <winsock2.h>
 #include <mswsock.h>
 #include <ws2tcpip.h>
@@ -15,48 +18,48 @@
 #define DBGPRINT
 #endif
 
-void error(const char *fmt, ...) {
+void error(const WCHAR *fmt, ...) {
   va_list args;
-  fprintf(stderr, "error: ");
+  fwprintf(stderr, L"error: ");
   va_start(args, fmt);
-  vfprintf(stderr, fmt, args);
+  vfwprintf(stderr, fmt, args);
   va_end(args);
 }
 
-void debug(const char *fmt, ...) {
+void debug(const WCHAR *fmt, ...) {
   va_list args;
-  fprintf(stderr, "debug: ");
+  fwprintf(stderr, L"debug: ");
   va_start(args, fmt);
-  vfprintf(stderr, fmt, args);
+  vfwprintf(stderr, fmt, args);
   va_end(args);
 }
 
-void print_usage(char *image) {
-  printf("transmit a file through a socket.\n\n"
-         "usage: %s <file> <host> <port>\n\n"
-         "where\n\n"
-         "<file>\tthe full path to file to be transmitted or '-' for stdin\n"
-         "<host>\thostname or ipv4 address of target\n"
-         "<port>\tservice port target is listening on\n", image);
+void print_usage(WCHAR *image) {
+  wprintf(L"transmit a file through a socket.\n\n"
+          L"usage: %s <file> <host> <port>\n\n"
+          L"where\n\n"
+          L"<file>\tthe full path to file to be transmitted or '-' for stdin\n"
+          L"<host>\thostname or ipv4 address of target\n"
+          L"<port>\tservice port target is listening on\n", image);
 }
 
-int main(int argc, char **argv) {
+int wmain(int argc, WCHAR **argv) {
   WSADATA wsaData;
   BOOL usingStdin = FALSE;
   int err;
 
   // command-line args
-  const char *filename;
-  const char *hostname;
-  const char *port;
+  WCHAR *filename;
+  WCHAR *hostname;
+  WCHAR *port;
 
   SOCKET s;
   HANDLE hFile;           // file to read
   SOCKADDR_IN host;       // destination address
 
   // used for dns lookup.
-  struct addrinfo aiHints = {0};
-  struct addrinfo *aiList = NULL;
+  ADDRINFOW aiHints = {0};
+  ADDRINFOW *aiList = NULL;
 
   if (argc < 4) {
     print_usage(argv[0]);
@@ -68,7 +71,7 @@ int main(int argc, char **argv) {
   hostname = argv[2];
   port = argv[3];
 
-  if (!strcmp(filename, "-")) {
+  if (!wcscmp(filename, L"-")) {
     // Use stdin.
     hFile = GetStdHandle(STD_INPUT_HANDLE);
     usingStdin = TRUE;
@@ -76,7 +79,7 @@ int main(int argc, char **argv) {
     hFile = CreateFile(filename, GENERIC_READ, FILE_SHARE_READ,
                        NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
-      error("failed to open file: %s\n", filename);
+      error(L"failed to open file: %s\n", filename);
       return 1;
     }
   }
@@ -85,7 +88,7 @@ int main(int argc, char **argv) {
   if ( err != 0 ) {
     /* Tell the user that we could not find a usable */
     /* WinSock DLL.                                  */
-    error("failed to init WSA\n");
+    error(L"failed to init WSA\n");
     return 1;
   }
 
@@ -99,7 +102,7 @@ int main(int argc, char **argv) {
       HIBYTE( wsaData.wVersion ) != 2 ) {
     /* Tell the user that we could not find a usable */
     /* WinSock DLL.                                  */
-    error("failed to obtain requested version\n");
+    error(L"failed to obtain requested version\n");
     WSACleanup( );
     return 1;
   }
@@ -111,20 +114,20 @@ int main(int argc, char **argv) {
   aiHints.ai_socktype = SOCK_STREAM;
   aiHints.ai_protocol = IPPROTO_TCP;
 
-  err = getaddrinfo(hostname, port, &aiHints, &aiList);
+  err = GetAddrInfoW(hostname, port, &aiHints, &aiList);
   if (err) {
-    error("getaddrinfo failed: %s\n", gai_strerror(err));
+    error(L"getaddrinfo failed: %s\n", gai_strerror(err));
   }
 
   // use the first SOCKADDR returned in the list.
   host = *(SOCKADDR_IN *)aiList->ai_addr;
 
   // free the dynamically allocated addrinfo structure.
-  freeaddrinfo(aiList);
+  FreeAddrInfoW(aiList);
 
   // Connect to server.
   if (connect(s, (SOCKADDR*)&host, sizeof(host)) == SOCKET_ERROR) {
-    error("failed to connect.\n");
+    error(L"failed to connect.\n");
     closesocket(s);
     WSACleanup();
     return 1;
@@ -139,7 +142,7 @@ int main(int argc, char **argv) {
         break;
       }
       if (send(s, buf, nread, 0) == SOCKET_ERROR) {
-        error("send failed: %d\n", WSAGetLastError());
+        error(L"send failed: %d\n", WSAGetLastError());
         return 1;
       }
     }
@@ -147,7 +150,7 @@ int main(int argc, char **argv) {
     if (!err) {
       err = GetLastError();
       if (err != ERROR_BROKEN_PIPE) {  // broken pipe expected.
-        error("ReadFile failed: %d\n", err);
+        error(L"ReadFile failed: %d\n", err);
         return 1;
       }
     }
@@ -156,7 +159,7 @@ int main(int argc, char **argv) {
     OVERLAPPED    overlapped = {0};
     DWORD start_time;
     if (!GetFileSizeEx(hFile, &file_size)) {
-      error("GetFileSize failed: %d\n", GetLastError());
+      error(L"GetFileSize failed: %d\n", GetLastError());
       return 1;
     }
 
@@ -177,11 +180,11 @@ int main(int argc, char **argv) {
           // everything's OK, just hasn't completed yet.
           DWORD ret = WaitForSingleObject(overlapped.hEvent, INFINITE);
           if (ret == WAIT_FAILED) {
-            error("wait failed: %d\n", GetLastError());
+            error(L"wait failed: %d\n", GetLastError());
             return 1;
           }
         } else {
-          error("failed to send file: %d\n", err);
+          error(L"failed to send file: %d\n", err);
           return 1;
         }
       }
@@ -189,7 +192,7 @@ int main(int argc, char **argv) {
       if (remain.QuadPart < 0) {
         remain.QuadPart = 0;
       }
-      DBGPRINT("sent %d bytes, remain: %I64d\n", CHUNK_SIZE, remain.QuadPart);
+      DBGPRINT(L"sent %d bytes, remain: %I64d\n", CHUNK_SIZE, remain.QuadPart);
       {
         DWORD cur = GetTickCount();
         DWORD elapsed = cur - start_time;
@@ -198,7 +201,7 @@ int main(int argc, char **argv) {
         double avg_speed_Mb_s = avg_speed_b_ms * 1000.0 / (1024 * 1024);
         double percent_complete = 100 *
           (1 - (double)remain.QuadPart / file_size.QuadPart);
-        printf("Transferred %.2f Mb of %.2f Mb [%.2f%%] at avg %.2f Mb/s\r",
+        wprintf(L"Transferred %.2f Mb of %.2f Mb [%.2f%%] at avg %.2f Mb/s\r",
                (double)transmitted/(1024*1024),
                (double)file_size.QuadPart/(1024*1024),
                percent_complete, avg_speed_Mb_s);
@@ -207,7 +210,7 @@ int main(int argc, char **argv) {
       overlapped.Offset = offset.LowPart;
       overlapped.OffsetHigh = offset.HighPart;
     }
-    printf("\n");
+    wprintf(L"\n");
 
     CloseHandle(overlapped.hEvent);
     CloseHandle(hFile);
